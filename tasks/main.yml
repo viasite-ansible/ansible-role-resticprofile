@@ -1,12 +1,26 @@
 ---
-- name: Check if restic is installed
+- name: Check if restic is installed (apt location)
+  ansible.builtin.stat:
+    path: /usr/bin/restic
+  register: restic_binary_apt
+
+- name: Check if restic is installed (custom location)
   ansible.builtin.stat:
     path: "{{ restic_path }}"
   register: restic_binary
 
+- name: Set restic_binary_found fact
+  ansible.builtin.set_fact:
+    restic_binary_found: "{{ restic_binary_apt.stat.exists or restic_binary.stat.exists }}"
+
+- name: Set restic_path to apt location if restic is installed via apt
+  ansible.builtin.set_fact:
+    restic_path: /usr/bin/restic
+  when: restic_binary_apt.stat.exists
+
 - name: Include install.yml if restic is not installed or restic_install is true
   ansible.builtin.include_tasks: install.yml
-  when: not restic_binary.stat.exists or restic_install
+  when: not restic_binary_found or restic_install
 
 - name: Overwrite SSH config for backup server
   ansible.builtin.template:
