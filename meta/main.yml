@@ -1,7 +1,7 @@
 galaxy_info:
-  role_name: restic
+  role_name: resticprofile
   author: angristan
-  description: Ansible role for Restic
+  description: Ansible role for Resticprofile
   license: MIT
   min_ansible_version: "2.4"
 

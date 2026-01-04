@@ -7,45 +7,36 @@
   ansible.builtin.package:
     name: pigz
 
-- name: Install restic from apt (Ubuntu 24.04+)
+- name: Install restic from apt (Ubuntu 24.04+) - resticprofile requires restic
   ansible.builtin.package:
     name: restic
   when: ansible_distribution == "Ubuntu" and ansible_distribution_major_version|int >= 24
-  register: restic_apt_installed
+  register: resticprofile_apt_installed
 
-- name: Set restic_path to apt location when using apt
-  ansible.builtin.set_fact:
-    restic_path: /usr/bin/restic
-  when: ansible_distribution == "Ubuntu" and ansible_distribution_major_version|int >= 24
-
-- name: Install bzip2 (to install restic from GitHub)
-  ansible.builtin.package:
-    name: bzip2
-  when: ansible_distribution != "Ubuntu" or ansible_distribution_major_version|int < 24
-
-- name: Download restic
+- name: Download resticprofile
   ansible.builtin.get_url:
-    url: "https://github.com/restic/restic/releases/download/v{{ restic_version }}/restic_{{ restic_version }}_linux_{{ restic_arch_map[ansible_architecture] | default(ansible_architecture) }}.bz2"
-    dest: "/tmp/restic_{{ restic_version }}_linux_{{ restic_arch_map[ansible_architecture] | default(ansible_architecture) }}.bz2"
+    url: "https://github.com/creativeprojects/resticprofile/releases/download/v{{ resticprofile_version }}/resticprofile_{{ resticprofile_version }}_linux_{{ resticprofile_arch_map[ansible_architecture] | default(ansible_architecture) }}.tar.gz"
+    dest: "/tmp/resticprofile_{{ resticprofile_version }}_linux_{{ resticprofile_arch_map[ansible_architecture] | default(ansible_architecture) }}.tar.gz"
     mode: "0644"
-  when: ansible_distribution != "Ubuntu" or ansible_distribution_major_version|int < 24
 
-- name: Extract restic
-  ansible.builtin.command: "bzip2 -d /tmp/restic_{{ restic_version }}_linux_{{ restic_arch_map[ansible_architecture] | default(ansible_architecture) }}.bz2"
-  args:
-    creates: "/tmp/restic_{{ restic_version }}_linux_{{ restic_arch_map[ansible_architecture] | default(ansible_architecture) }}"
-  when: ansible_distribution != "Ubuntu" or ansible_distribution_major_version|int < 24
+- name: Extract resticprofile
+  ansible.builtin.unarchive:
+    src: "/tmp/resticprofile_{{ resticprofile_version }}_linux_{{ resticprofile_arch_map[ansible_architecture] | default(ansible_architecture) }}.tar.gz"
+    dest: "/tmp"
+    remote_src: true
+    creates: "/tmp/resticprofile"
 
-- name: Install restic
+- name: Install resticprofile
   ansible.builtin.copy:
     remote_src: true
-    src: "/tmp/restic_{{ restic_version }}_linux_{{ restic_arch_map[ansible_architecture] | default(ansible_architecture) }}"
-    dest: "{{ restic_path }}"
+    src: "/tmp/resticprofile"
+    dest: "{{ resticprofile_path }}"
     mode: "0755"
-  when: ansible_distribution != "Ubuntu" or ansible_distribution_major_version|int < 24
 
-- name: Remove downloaded file
+- name: Remove downloaded files
   ansible.builtin.file:
-    path: "/tmp/restic_{{ restic_version }}_linux_{{ restic_arch_map[ansible_architecture] | default(ansible_architecture) }}"
+    path: "{{ item }}"
     state: absent
-  when: ansible_distribution != "Ubuntu" or ansible_distribution_major_version|int < 24
+  loop:
+    - "/tmp/resticprofile_{{ resticprofile_version }}_linux_{{ resticprofile_arch_map[ansible_architecture] | default(ansible_architecture) }}.tar.gz"
+    - "/tmp/resticprofile"

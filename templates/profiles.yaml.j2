@@ -1,0 +1,5 @@
+# yaml-language-server: $schema=https://creativeprojects.github.io/resticprofile/jsonschema/config.json
+
+version: "1"
+
+{{ resticprofile_profiles | to_nice_yaml(indent=2) }}

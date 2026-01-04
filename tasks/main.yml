@@ -1,50 +1,133 @@
 ---
-- name: Check if restic is installed (apt location)
+- name: Check if resticprofile is installed (custom location)
   ansible.builtin.stat:
-    path: /usr/bin/restic
-  register: restic_binary_apt
+    path: "{{ resticprofile_path }}"
+  register: resticprofile_binary
 
-- name: Check if restic is installed (custom location)
-  ansible.builtin.stat:
-    path: "{{ restic_path }}"
-  register: restic_binary
-
-- name: Set restic_binary_found fact
+- name: Set resticprofile_binary_found fact
   ansible.builtin.set_fact:
-    restic_binary_found: "{{ restic_binary_apt.stat.exists or restic_binary.stat.exists }}"
+    resticprofile_binary_found: "{{ resticprofile_binary.stat.exists }}"
 
-- name: Set restic_path to apt location if restic is installed via apt
-  ansible.builtin.set_fact:
-    restic_path: /usr/bin/restic
-  when: restic_binary_apt.stat.exists
-
-- name: Include install.yml if restic is not installed or restic_install is true
+- name: Include install.yml if resticprofile is not installed or resticprofile_install is true
   ansible.builtin.include_tasks: install.yml
-  when: not restic_binary_found or restic_install
+  when: not resticprofile_binary_found or resticprofile_install
 
 - name: Overwrite SSH config for backup server
   ansible.builtin.template:
     src: ssh_config.j2
-    dest: "{{ restic_user_home }}/.ssh/config"
+    dest: "{{ resticprofile_user_home }}/.ssh/config"
     owner: root
     group: root
     mode: "0600"
-  when: restic_ssh_enabled
+  when: resticprofile_ssh_enabled and resticprofile_ssh_user is defined
 
 - name: Add SSH private key
   ansible.builtin.template:
     src: ssh_private_key.j2
-    dest: "{{ restic_ssh_private_key_path }}"
+    dest: "{{ resticprofile_ssh_private_key_path }}"
     mode: "0600"
-  when: restic_ssh_private_key is defined and restic_ssh_enabled
+  when: resticprofile_ssh_private_key is defined and resticprofile_ssh_enabled
 
-- name: Add restic_env in home folder
+- name: Add resticprofile_env in home folder
   ansible.builtin.template:
     src: restic_env.j2
-    dest: "{{ restic_user_home }}/.restic_env"
+    dest: "{{ resticprofile_user_home }}/.restic_env"
     owner: root
     group: root
     mode: "0600"
+
+- name: Ensure resticprofile configuration directory exists
+  ansible.builtin.file:
+    path: "{{ resticprofile_user_home }}/resticprofile"
+    state: directory
+    mode: "0700"
+    owner: "{{ resticprofile_user }}"
+    group: "{{ resticprofile_user }}"
+  when: resticprofile_profiles | length > 0
+
+- name: Ensure /etc/resticprofile directory exists
+  ansible.builtin.file:
+    path: /etc/resticprofile
+    state: directory
+    mode: "0700"
+    owner: "{{ resticprofile_user }}"
+    group: "{{ resticprofile_user }}"
+
+- name: Create resticprofile password file
+  ansible.builtin.copy:
+    content: "{{ resticprofile_password }}\n"
+    dest: /etc/resticprofile/password.txt
+    owner: "{{ resticprofile_user }}"
+    group: "{{ resticprofile_user }}"
+    mode: "0600"
+  when: resticprofile_password is defined
+  no_log: true
+
+- name: Set restic repository environment variable
+  ansible.builtin.set_fact:
+    restic_repository_env: >-
+      {%- if resticprofile_ssh_enabled -%}
+        {%- if resticprofile_repository_base is defined and resticprofile_repository_base is not none -%}
+          sftp:{{ resticprofile_ssh_host }}:{{ resticprofile_repository_base }}/{{ resticprofile_repository_name }}
+        {%- else -%}
+          sftp:{{ resticprofile_ssh_host }}:{{ resticprofile_repository_name }}
+        {%- endif -%}
+      {%- else -%}
+        {{ resticprofile_repository }}
+      {%- endif -%}
+
+- debug: 
+    var: restic_repository_env
+- name: Extract local repository path
+  ansible.builtin.set_fact:
+    restic_local_repo_path: "{{ restic_repository_env | regex_replace('^local:', '') }}"
+  when:
+    - not resticprofile_ssh_enabled
+    - restic_repository_env is defined
+    - restic_repository_env | regex_search('^local:') or (restic_repository_env | regex_search('^/') and not restic_repository_env | regex_search('^[a-z]+:'))
+
+- name: Ensure local repository directory exists
+  ansible.builtin.file:
+    path: "{{ restic_local_repo_path }}"
+    state: directory
+    mode: "0700"
+    owner: "{{ resticprofile_user }}"
+    group: "{{ resticprofile_user }}"
+  when:
+    - restic_local_repo_path is defined
+    - resticprofile_password is defined
+
+- name: Check if restic repository is initialized
+  ansible.builtin.command:
+    cmd: "{{ resticprofile_path }} snapshots"
+  environment:
+    RESTIC_REPOSITORY: "{{ restic_repository_env }}"
+    RESTIC_PASSWORD: "{{ resticprofile_password }}"
+  register: restic_snapshots_check
+  failed_when: false
+  changed_when: false
+  when: resticprofile_password is defined
+  no_log: true
+
+- name: Initialize restic repository if empty
+  ansible.builtin.command:
+    cmd: "restic init"
+  environment:
+    RESTIC_REPOSITORY: "{{ restic_repository_env }}"
+    RESTIC_PASSWORD: "{{ resticprofile_password }}"
+  when:
+    - resticprofile_password is defined
+    - restic_snapshots_check.rc != 0
+  no_log: true
+
+- name: Generate resticprofile profiles.yaml
+  ansible.builtin.template:
+    src: profiles.yaml.j2
+    dest: "/etc/resticprofile/profiles.yaml"
+    owner: "{{ resticprofile_user }}"
+    group: "{{ resticprofile_user }}"
+    mode: "0400"
+  when: resticprofile_profiles | length > 0
 
 - name: Add systemd service for restic
   ansible.builtin.template:
@@ -52,7 +135,7 @@
     dest: /etc/systemd/system/restic-backup.service
     mode: "0644"
   vars:
-    restic_folders_combined: "{{ restic_default_folders + restic_folders }}"
+    resticprofile_folders_combined: "{{ resticprofile_default_folders + resticprofile_folders }}"
   notify: Reload systemd
 
 - name: Add systemd timer for restic

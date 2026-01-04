@@ -1,5 +1,11 @@
-Host {{ restic_ssh_host }}
-	User {{ restic_ssh_user }}
-	HostName {{ restic_ssh_hostname }}
-	IdentityFile {{ restic_ssh_private_key_path }}
-	Port {{ restic_ssh_port }}
+Host {{ resticprofile_ssh_host }}
+	User {{ resticprofile_ssh_user }}
+{% if resticprofile_ssh_hostname is defined and resticprofile_ssh_hostname is not none %}
+	HostName {{ resticprofile_ssh_hostname }}
+{% else %}
+	HostName {{ resticprofile_ssh_host }}
+{% endif %}
+	IdentityFile {{ resticprofile_ssh_private_key_path }}
+{% if resticprofile_ssh_port is defined %}
+	Port {{ resticprofile_ssh_port }}
+{% endif %}
